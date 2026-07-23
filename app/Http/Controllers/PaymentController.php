@@ -452,27 +452,47 @@ class PaymentController extends Controller
                 __('app.status'), 'Last Payment Date', __('app.monthly_fee'),
             ]);
 
-            $byGrade = $rows->groupBy(fn($d) => $d['student']->year_level ?? '?')->toArray();
+            $byGrade = $rows->groupBy(function ($d) {
+                $s = $d['studentModel'] ?? $d['student'];
+                return is_array($s) ? ($s['year_level'] ?? '?') : ($s->year_level ?? '?');
+            })->toArray();
             ksort($byGrade);
             foreach ($byGrade as $grade => $gradeRows) {
                 fputcsv($handle, []);
                 fputcsv($handle, [__('app.grade') . ' ' . $grade]);
                 foreach ($gradeRows as $d) {
-                    $s = $d['student'];
-                    $ct = str_starts_with($s->time_type ?? '', 'sat-sun')
+                    $s = $d['studentModel'] ?? $d['student'];
+                    $isArr = is_array($s);
+                    $timeType = $isArr ? ($s['time_type'] ?? '') : ($s->time_type ?? '');
+                    $ct = str_starts_with($timeType, 'sat-sun')
                         ? __('app.weekend')
                         : __('app.weekday');
+                    $studentId  = $isArr ? ($s['student_id']  ?? '') : ($s->student_id  ?? '');
+                    $fullName   = $isArr ? ($s['full_name']   ?? '') : ($s->full_name   ?? '');
+                    $yearLevel  = $isArr ? ($s['year_level']  ?? '') : ($s->year_level  ?? '');
+                    $subject    = $isArr ? ($s['subject']     ?? '') : ($s->subject     ?? '');
+                    $monthlyFee = $isArr ? ($s['monthly_fee'] ?? '') : ($s->monthly_fee ?? '');
+
+                    $nextDate = $d['nextPaymentDateFormatted'] ?? ($d['nextPaymentDate']?->format('Y-m-d') ?? 'N/A');
+                    
+                    $lastPayment = $d['lastPaymentModel'] ?? $d['lastPayment'];
+                    if (is_array($lastPayment)) {
+                        $lastDate = $lastPayment['payment_date_formatted'] ?? 'N/A';
+                    } else {
+                        $lastDate = $lastPayment?->payment_date?->format('Y-m-d') ?? 'N/A';
+                    }
+
                     fputcsv($handle, [
-                        $s->student_id,
-                        $s->full_name ?? '',
-                        $s->year_level ?? '',
+                        $studentId,
+                        $fullName,
+                        $yearLevel,
                         $ct,
-                        $s->subject ?? '',
-                        $d['nextPaymentDate']?->format('Y-m-d') ?? 'N/A',
+                        $subject,
+                        $nextDate,
                         $d['daysUntilNextPayment'] ?? 'N/A',
                         __('app.' . $d['alertLevel']) ?? $d['alertLevel'],
-                        $d['lastPayment']?->payment_date?->format('Y-m-d') ?? 'N/A',
-                        $s->monthly_fee ?? '',
+                        $lastDate,
+                        $monthlyFee,
                     ]);
                 }
             }
@@ -595,28 +615,14 @@ class PaymentController extends Controller
     private function buildStudentAlertData(Student $student, Carbon $now): array
     {
         $lastPayment = $student->payments->first();
-        $data = [
-            'student'              => [
-                'id'                => $student->id,
-                'full_name'         => $student->full_name,
-                'student_id'        => $student->student_id,
-                'year_level'        => $student->year_level,
-                'time_type'         => $student->time_type,
-                'subject'           => $student->subject,
-                'monthly_fee'       => (float) ($student->monthly_fee ?? 0),
-                'gender'            => $student->gender,
-            ],
-            'lastPayment'          => $lastPayment ? [
-                'due_date_formatted' => $lastPayment->due_date?->format('M d, Y'),
-                'payment_date_formatted' => $lastPayment->payment_date?->format('M d, Y'),
-            ] : null,
-            'nextPaymentDateFormatted' => null,
-            'daysUntilNextPayment' => null,
-            'alertLevel'           => 'upcoming',
-            'overdueMonth'         => null,
-            'monthKey'             => null,
-            'monthLabel'           => null,
-        ];
+
+        $next = null;
+        $nextPaymentDateFormatted = null;
+        $daysUntilNextPayment = null;
+        $alertLevel = 'upcoming';
+        $overdueMonth = null;
+        $monthKey = null;
+        $monthLabel = null;
 
         if ($lastPayment && $lastPayment->payment_date) {
             // Use the stored next_payment_date if available (most accurate)
@@ -633,19 +639,43 @@ class PaymentController extends Controller
 
             $days = (int) $now->diffInDays($next, false);
 
-            $data['nextPaymentDateFormatted'] = $next->format('M d, Y');
-            $data['daysUntilNextPayment'] = $days;
-            $data['alertLevel']           = match (true) {
+            $nextPaymentDateFormatted = $next->format('M d, Y');
+            $daysUntilNextPayment = $days;
+            $alertLevel           = match (true) {
                 $days < 0  => 'overdue',
                 $days <= 7 => 'closely',
                 default   => 'upcoming',
             };
-            $data['overdueMonth']         = $days < 0 ? $next->format('F Y') : null;
-            $data['monthKey']             = $next->format('Y-m');
-            $data['monthLabel']           = $next->format('F Y');
+            $overdueMonth         = $days < 0 ? $next->format('F Y') : null;
+            $monthKey             = $next->format('Y-m');
+            $monthLabel           = $next->format('F Y');
         }
 
-        return $data;
+        return [
+            'student'              => [
+                'id'          => $student->id,
+                'full_name'   => $student->full_name,
+                'student_id'  => $student->student_id,
+                'year_level'  => $student->year_level,
+                'time_type'   => $student->time_type,
+                'subject'     => $student->subject,
+                'monthly_fee' => (float) ($student->monthly_fee ?? 0),
+                'gender'      => $student->gender,
+            ],
+            'studentModel'             => $student,
+            'lastPayment'              => $lastPayment ? [
+                'due_date_formatted'     => $lastPayment->due_date?->format('M d, Y'),
+                'payment_date_formatted' => $lastPayment->payment_date?->format('M d, Y'),
+            ] : null,
+            'lastPaymentModel'         => $lastPayment,
+            'nextPaymentDate'          => $next,
+            'nextPaymentDateFormatted' => $nextPaymentDateFormatted,
+            'daysUntilNextPayment'     => $daysUntilNextPayment,
+            'alertLevel'               => $alertLevel,
+            'overdueMonth'             => $overdueMonth,
+            'monthKey'                 => $monthKey,
+            'monthLabel'               => $monthLabel,
+        ];
     }
 
     // ── Deadline Alerts ───────────────────────────────────────────────────────
@@ -700,13 +730,18 @@ class PaymentController extends Controller
 
         $filtered = $all->filter(function ($d) use ($filterLevel, $search, $filterGrade) {
             if ($filterLevel !== 'all' && $d['alertLevel'] !== $filterLevel) return false;
-            if ($filterGrade !== '' && (string)($d['student']->year_level ?? '') !== $filterGrade) return false;
+            
+            $s = $d['studentModel'] ?? $d['student'];
+            $isArr = is_array($s);
+            $yearLevel = $isArr ? ($s['year_level'] ?? '') : ($s->year_level ?? '');
+            if ($filterGrade !== '' && (string)$yearLevel !== $filterGrade) return false;
+            
             if ($search !== '') {
-                $hay  = strtolower(
-                    ($d['student']->full_name   ?? '') . ' ' .
-                    ($d['student']->student_id  ?? '') . ' ' .
-                    ($d['student']->subject     ?? '')
-                );
+                $fullName  = $isArr ? ($s['full_name']  ?? '') : ($s->full_name  ?? '');
+                $studentId = $isArr ? ($s['student_id'] ?? '') : ($s->student_id ?? '');
+                $subject   = $isArr ? ($s['subject']    ?? '') : ($s->subject    ?? '');
+                
+                $hay = strtolower($fullName . ' ' . $studentId . ' ' . $subject);
                 if (strpos($hay, strtolower($search)) === false) return false;
             }
             return true;

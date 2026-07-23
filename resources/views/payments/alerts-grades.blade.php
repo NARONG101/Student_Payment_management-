@@ -54,25 +54,45 @@
                 </thead>
                 <tbody>
                     @foreach($studentData as $data)
+                    @php
+                        $s = $data['studentModel'] ?? $data['student'];
+                        $isArr = is_array($s);
+                        $sId = $isArr ? $s['id'] : $s->id;
+                        $fullName = $isArr ? $s['full_name'] : $s->full_name;
+                        $gender = $isArr ? ($s['gender'] ?? 'N/A') : ($s->gender ?? 'N/A');
+                        $studentCode = $isArr ? ($s['student_id'] ?? '') : ($s->student_id ?? '');
+                        $yearLevel = $isArr ? ($s['year_level'] ?? '—') : ($s->year_level ?? '—');
+                        $monthlyFee = $isArr ? ($s['monthly_fee'] ?? 0) : ($s->monthly_fee ?? 0);
+
+                        $lastPay = $data['lastPaymentModel'] ?? $data['lastPayment'];
+                        $isLastPayArr = is_array($lastPay);
+                        $nextDateFormatted = $data['nextPaymentDateFormatted'] ?? ($data['nextPaymentDate']?->format('M d, Y') ?? '—');
+                    @endphp
                     <tr>
                         <td>
-                            <a href="{{ route('students.show', $data['student']) }}" style="text-decoration:none">
-                                <div style="font-weight:600;color:var(--text-primary)">{{ $data['student']->full_name }} ({{ ucfirst($data['student']->gender ?? 'N/A') }})</div>
-                                <div style="font-size:11px;color:var(--text-muted)">{{ $data['student']->student_id }}</div>
+                            <a href="{{ route('students.show', $sId) }}" style="text-decoration:none">
+                                <div style="font-weight:600;color:var(--text-primary)">{{ $fullName }} ({{ ucfirst($gender) }})</div>
+                                <div style="font-size:11px;color:var(--text-muted)">{{ $studentCode }}</div>
                             </a>
                         </td>
-                        <td style="color:var(--text-secondary)">Grade {{ $data['student']->year_level ?? '—' }}</td>
+                        <td style="color:var(--text-secondary)">Grade {{ $yearLevel }}</td>
                         <td style="font-size:12px;color:var(--text-muted)">
-                            @if($data['lastPayment']?->due_date)
-                                {{ $data['lastPayment']->due_date->format('M d, Y') }}
-                                @if($data['lastPayment']->payment_date && $data['lastPayment']->payment_date->format('Y-m-d') !== $data['lastPayment']->due_date->format('Y-m-d'))
-                                    <div style="font-size:10px;color:var(--text-muted)">paid {{ $data['lastPayment']->payment_date->format('M d, Y') }}</div>
+                            @if($isLastPayArr)
+                                {{ $lastPay['due_date_formatted'] ?? $lastPay['payment_date_formatted'] ?? '—' }}
+                            @elseif($lastPay)
+                                @if($lastPay->due_date)
+                                    {{ $lastPay->due_date->format('M d, Y') }}
+                                    @if($lastPay->payment_date && $lastPay->payment_date->format('Y-m-d') !== $lastPay->due_date->format('Y-m-d'))
+                                        <div style="font-size:10px;color:var(--text-muted)">paid {{ $lastPay->payment_date->format('M d, Y') }}</div>
+                                    @endif
+                                @else
+                                    {{ $lastPay->payment_date?->format('M d, Y') ?? '—' }}
                                 @endif
                             @else
-                                {{ $data['lastPayment']?->payment_date?->format('M d, Y') ?? '—' }}
+                                —
                             @endif
                         </td>
-                        <td style="font-size:12px;color:var(--text-muted)">{{ $data['nextPaymentDate']?->format('M d, Y') ?? '—' }}</td>
+                        <td style="font-size:12px;color:var(--text-muted)">{{ $nextDateFormatted }}</td>
                         <td style="font-weight:600">
                             @if($data['daysUntilNextPayment'] !== null)
                                 @if($data['daysUntilNextPayment'] < 0)
@@ -85,11 +105,11 @@
                             @else <span class="text-muted">—</span>
                             @endif
                         </td>
-                        <td style="font-weight:600;color:var(--text-primary)">${{ number_format($data['student']->monthly_fee ?? 0, 2) }}</td>
+                        <td style="font-weight:600;color:var(--text-primary)">${{ number_format((float)$monthlyFee, 2) }}</td>
                         <td>
                             <div style="display:flex;gap:4px">
-                                <a href="{{ route('students.show', $data['student']) }}" class="btn btn-icon btn-outline" title="View student"><i class="fas fa-user" style="font-size:11px" aria-hidden="true"></i></a>
-                                <a href="{{ route('payments.create') }}?student_id={{ $data['student']->id }}" class="btn btn-icon btn-outline" title="Add payment" style="color:var(--primary)"><i class="fas fa-plus" style="font-size:11px" aria-hidden="true"></i></a>
+                                <a href="{{ route('students.show', $sId) }}" class="btn btn-icon btn-outline" title="View student"><i class="fas fa-user" style="font-size:11px" aria-hidden="true"></i></a>
+                                <a href="{{ route('payments.create') }}?student_id={{ $sId }}" class="btn btn-icon btn-outline" title="Add payment" style="color:var(--primary)"><i class="fas fa-plus" style="font-size:11px" aria-hidden="true"></i></a>
                             </div>
                         </td>
                     </tr>
